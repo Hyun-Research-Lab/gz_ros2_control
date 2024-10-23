@@ -155,8 +155,15 @@ public:
   // Should hold the joints if no control_mode is active
   bool hold_joints_ = true;
 
-  // custom bicopter stuff
+  // restore the input from ros2_control controllers
   double motor1_velocity, motor2_velocity, arm_disarm_GPIO;
+
+  // the data we will be sending back to our ros2_controllers
+  double position_x, position_y, position_z;
+  double orientation_qx, orientation_qy, orientation_qz, orientation_qw;
+  double velocity_x, velocity_y, velocity_z;
+  double omegab_1, omegab_2, omegab_3; // angular velocities
+  double motor1_position, motor2_position; // motor positions
 
   // sim::components::Link *servo1_link;
   sim::Entity servo1_entity;
@@ -457,9 +464,23 @@ namespace gz_ros2_control
     this->dataPtr->command_interfaces_.emplace_back("motor2", "velocity", &(this->dataPtr->motor2_velocity));
     this->dataPtr->command_interfaces_.emplace_back("arm_disarm_GPIO", "arm_disarm", &(this->dataPtr->arm_disarm_GPIO));
 
-    this->dataPtr->state_interfaces_.emplace_back("motor1", "velocity", &(this->dataPtr->motor1_velocity));
-    this->dataPtr->state_interfaces_.emplace_back("motor2", "velocity", &(this->dataPtr->motor2_velocity));
-    this->dataPtr->state_interfaces_.emplace_back("arm_disarm_GPIO", "arm_disarm", &(this->dataPtr->arm_disarm_GPIO));
+    // this is what the state interfaces will export (the state of the bicopter)
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "position_x", &(this->dataPtr->position_x));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "position_y", &(this->dataPtr->position_y));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "position_z", &(this->dataPtr->position_z));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "orientation_qx", &(this->dataPtr->orientation_qx));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "orientation_qy", &(this->dataPtr->orientation_qy));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "orientation_qz", &(this->dataPtr->orientation_qz));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "orientation_qw", &(this->dataPtr->orientation_qw));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "velocity_x", &(this->dataPtr->velocity_x));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "velocity_y", &(this->dataPtr->velocity_y));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "velocity_z", &(this->dataPtr->velocity_z));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "omegab_1", &(this->dataPtr->omegab_1));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "omegab_2", &(this->dataPtr->omegab_2));
+    this->dataPtr->state_interfaces_.emplace_back("bicopter", "omegab_3", &(this->dataPtr->omegab_3));
+
+    this->dataPtr->state_interfaces_.emplace_back("motor1", "position", &(this->dataPtr->motor1_position));
+    this->dataPtr->state_interfaces_.emplace_back("motor2", "position", &(this->dataPtr->motor2_position));
 
     // get the servo1 and servo2 links
     this->dataPtr->servo1_entity = _ecm.EntityByComponents(sim::components::Name("servo1"));
@@ -640,6 +661,10 @@ namespace gz_ros2_control
         }
       }
     }
+
+
+
+
     return hardware_interface::return_type::OK;
   }
 

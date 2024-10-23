@@ -413,6 +413,10 @@ bool GazeboSimBicopter::initSim(
   this->dataPtr->command_interfaces_.emplace_back("motor2", "velocity", &(this->dataPtr->motor2_velocity));
   this->dataPtr->command_interfaces_.emplace_back("arm_disarm_GPIO", "arm_disarm", &(this->dataPtr->arm_disarm_GPIO));
 
+  this->dataPtr->state_interfaces_.emplace_back("motor1", "velocity", &(this->dataPtr->motor1_velocity));
+  this->dataPtr->state_interfaces_.emplace_back("motor2", "velocity", &(this->dataPtr->motor2_velocity));
+  this->dataPtr->state_interfaces_.emplace_back("arm_disarm_GPIO", "arm_disarm", &(this->dataPtr->arm_disarm_GPIO));
+
   return true;
 }
 

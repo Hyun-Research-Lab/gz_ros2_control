@@ -21,7 +21,7 @@
     type="gz_ros2_control::GazeboSimBicopter"
     base_class_type="gz_ros2_control::GazeboSimSystemInterface">
     <description>
-      GazeboPositionJoint
+      Gazebo plugin specifically for a single bicopter
     </description>
   </class>
 

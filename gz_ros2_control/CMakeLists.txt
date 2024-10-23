@@ -54,6 +54,7 @@ ament_target_dependencies(${PROJECT_NAME}-system
 
 add_library(gz_hardware_plugins SHARED
   src/gz_system.cpp
+  src/gz_bicopter.cpp
 )
 ament_target_dependencies(gz_hardware_plugins
   rclcpp_lifecycle

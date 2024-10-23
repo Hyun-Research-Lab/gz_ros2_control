@@ -16,4 +16,13 @@
      </description>
    </class>
 
+   <class
+    name="gz_ros2_control/GazeboSimBicopter"
+    type="gz_ros2_control::GazeboSimBicopter"
+    base_class_type="gz_ros2_control::GazeboSimSystemInterface">
+    <description>
+      GazeboPositionJoint
+    </description>
+  </class>
+
 </library>

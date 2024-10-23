@@ -158,9 +158,11 @@ public:
   // custom bicopter stuff
   double motor1_velocity, motor2_velocity, arm_disarm_GPIO;
 
-  sim::components::Link *servo1_link;
+  // sim::components::Link *servo1_link;
   sim::Entity servo1_entity;
-
+  sim::Entity servo2_entity;
+  sim::Entity base_entity;
+  sim::Entity bicopter_entity;
 };
 
 namespace gz_ros2_control
@@ -460,15 +462,13 @@ namespace gz_ros2_control
     this->dataPtr->state_interfaces_.emplace_back("arm_disarm_GPIO", "arm_disarm", &(this->dataPtr->arm_disarm_GPIO));
 
     // get the servo1 and servo2 links
-    sim::Entity servo1_entity = _ecm.EntityByComponents(sim::components::Name("servo1"));
-    this->dataPtr->servo1_entity = servo1_entity;
+    this->dataPtr->servo1_entity = _ecm.EntityByComponents(sim::components::Name("servo1"));
+    this->dataPtr->servo2_entity = _ecm.EntityByComponents(sim::components::Name("servo2"));
+    this->dataPtr->base_entity = _ecm.EntityByComponents(sim::components::Name("base_no_inertia"));
+    this->dataPtr->bicopter_entity = _ecm.EntityByComponents(sim::components::Name("bicopter_foobar"));
     // sim::Entity servo2_entity = _ecm.EntityByComponents(sim::components::Name("servo2"));
 
-    this->dataPtr->servo1_link = _ecm.Component<sim::components::Link>(servo1_entity);
-
-    RCLCPP_INFO_STREAM(
-        this->nh_->get_logger(),
-        "Servo1: " << servo1_entity << " Link: " << this->dataPtr->servo1_link);
+    // this->dataPtr->servo1_link = _ecm.Component<sim::components::Link>(servo1_entity);
 
     return true;
   }
@@ -703,46 +703,117 @@ namespace gz_ros2_control
   {
 
     // print this->dataPtr->motor1_velocity, this->dataPtr->motor2_velocity, this->dataPtr->arm_disarm_GPIO
-    RCLCPP_INFO_STREAM(
-        this->nh_->get_logger(),
-        "motor1_velocity: " << this->dataPtr->motor1_velocity << " motor2_velocity: " << this->dataPtr->motor2_velocity << " arm_disarm_GPIO: " << this->dataPtr->arm_disarm_GPIO);
+    // RCLCPP_INFO_STREAM(
+    //     this->nh_->get_logger(),
+    //     "motor1_velocity: " << this->dataPtr->motor1_velocity << " motor2_velocity: " << this->dataPtr->motor2_velocity << " arm_disarm_GPIO: " << this->dataPtr->arm_disarm_GPIO);
+    
+    // begin logan edits
+    gz::math::Vector3d link1Force(0.0, this->dataPtr->motor1_velocity, 0.0); // Force vector in world frame
+    gz::math::Vector3d link1Torque(0.0, 0.0, 0.0);                           // Torque vector in world frame
 
-    // Define the force vector to apply (e.g., 10N in the x-direction)
-    gz::math::Vector3d force(0, 0.0, this->dataPtr->motor1_velocity); // Force vector in Newtons
+    auto basePoseComp = this->dataPtr->ecm->Component<sim::components::Pose>(this->dataPtr->bicopter_entity);
+    if (!basePoseComp)
+    {
+      RCLCPP_ERROR(this->nh_->get_logger(), "Pose component not found for the link (base)");
+      return hardware_interface::return_type::ERROR;
+    }
+    gz::math::Pose3d basePose = basePoseComp->Data();       // Pose of the base in world frame
 
-    // Define a zero torque vector (if no torque needs to be applied)
-    gz::math::Vector3d torque(0.0, 0.0, 0.0); // Torque vector in Nm
+    auto servo1RelPose = this->dataPtr->ecm->Component<sim::components::Pose>(this->dataPtr->servo1_entity);
+    if (!servo1RelPose)
+    {
+      RCLCPP_ERROR(this->nh_->get_logger(), "Pose component not found for the link (servo1)");
+      return hardware_interface::return_type::ERROR;
+    }
+    gz::math::Pose3d servo1RelativePose = servo1RelPose->Data();       // Pose of the servo1 in base frame
+
+    gz::math::Pose3d servo1Pose = basePose * servo1RelativePose; // Pose of the servo1 in world frame
+    gz::math::Quaterniond linkOrientation1 = servo1Pose.Rot();     // Orientation of the link in world frame
+
+    // Rotate the force and torque vectors to the link's frame of reference
+    gz::math::Vector3d force1 = linkOrientation1.RotateVector(link1Force);
+    gz::math::Vector3d torque1 = linkOrientation1.RotateVector(link1Torque);
 
     // Create a new gz::msgs::Wrench message
-  gz::msgs::Wrench wrenchMsg;
-  wrenchMsg.mutable_force()->set_x(force.X());
-  wrenchMsg.mutable_force()->set_y(force.Y());
-  wrenchMsg.mutable_force()->set_z(force.Z());
-  wrenchMsg.mutable_torque()->set_x(torque.X());
-  wrenchMsg.mutable_torque()->set_y(torque.Y());
-  wrenchMsg.mutable_torque()->set_z(torque.Z());
+    gz::msgs::Wrench wrenchMsg1;
+    wrenchMsg1.mutable_force()->set_x(force1.X());
+    wrenchMsg1.mutable_force()->set_y(force1.Y());
+    wrenchMsg1.mutable_force()->set_z(force1.Z());
+    wrenchMsg1.mutable_torque()->set_x(torque1.X());
+    wrenchMsg1.mutable_torque()->set_y(torque1.Y());
+    wrenchMsg1.mutable_torque()->set_z(torque1.Z());
 
     // Check if the component exists, and either create or update it
     if (!this->dataPtr->ecm->EntityHasComponentType(this->dataPtr->servo1_entity, sim::components::ExternalWorldWrenchCmd().TypeId()))
     {
       // Create a new ExternalWorldWrenchCmd component with the force and torque
-      this->dataPtr->ecm->CreateComponent(this->dataPtr->servo1_entity, sim::components::ExternalWorldWrenchCmd(wrenchMsg));
+      this->dataPtr->ecm->CreateComponent(this->dataPtr->servo1_entity, sim::components::ExternalWorldWrenchCmd(wrenchMsg1));
     }
     else
     {
       // Update the existing ExternalWorldWrenchCmd component
-      auto wrenchComp = this->dataPtr->ecm->Component<sim::components::ExternalWorldWrenchCmd>(this->dataPtr->servo1_entity);
-      if (wrenchComp)
+      auto wrenchComp1 = this->dataPtr->ecm->Component<sim::components::ExternalWorldWrenchCmd>(this->dataPtr->servo1_entity);
+      if (wrenchComp1)
       {
-        wrenchComp->Data().mutable_force()->set_x(force.X());
-    wrenchComp->Data().mutable_force()->set_y(force.Y());
-    wrenchComp->Data().mutable_force()->set_z(force.Z());
-    wrenchComp->Data().mutable_torque()->set_x(torque.X());
-    wrenchComp->Data().mutable_torque()->set_y(torque.Y());
-    wrenchComp->Data().mutable_torque()->set_z(torque.Z());
+        wrenchComp1->Data().mutable_force()->set_x(force1.X());
+        wrenchComp1->Data().mutable_force()->set_y(force1.Y());
+        wrenchComp1->Data().mutable_force()->set_z(force1.Z());
+        wrenchComp1->Data().mutable_torque()->set_x(torque1.X());
+        wrenchComp1->Data().mutable_torque()->set_y(torque1.Y());
+        wrenchComp1->Data().mutable_torque()->set_z(torque1.Z());
       }
     }
-  // end logan edits
+
+    // servo2 thrust
+    gz::math::Vector3d link2Force(0.0, this->dataPtr->motor2_velocity, 0.0); // Force vector in world frame
+    gz::math::Vector3d link2Torque(0.0, 0.0, 0.0);                           // Torque vector in world frame
+
+    auto servo2RelPose = this->dataPtr->ecm->Component<sim::components::Pose>(this->dataPtr->servo2_entity);
+    if (!servo2RelPose)
+    {
+      RCLCPP_ERROR(this->nh_->get_logger(), "Pose component not found for the link (servo2)");
+      return hardware_interface::return_type::ERROR;
+    }
+    gz::math::Pose3d servo2RelativePose = servo2RelPose->Data();       // Pose of the servo1 in base frame
+
+    gz::math::Pose3d servo2Pose = basePose * servo2RelativePose; // Pose of the servo1 in world frame
+    gz::math::Quaterniond linkOrientation2 = servo2Pose.Rot();     // Orientation of the link in world frame
+
+    // Rotate the force and torque vectors to the link's frame of reference
+    gz::math::Vector3d force2 = linkOrientation2.RotateVector(link2Force);
+    gz::math::Vector3d torque2 = linkOrientation2.RotateVector(link2Torque);
+
+    // Create a new gz::msgs::Wrench message
+    gz::msgs::Wrench wrenchMsg2;
+    wrenchMsg2.mutable_force()->set_x(force2.X());
+    wrenchMsg2.mutable_force()->set_y(force2.Y());
+    wrenchMsg2.mutable_force()->set_z(force2.Z());
+    wrenchMsg2.mutable_torque()->set_x(torque2.X());
+    wrenchMsg2.mutable_torque()->set_y(torque2.Y());
+    wrenchMsg2.mutable_torque()->set_z(torque2.Z());
+
+    // Check if the component exists, and either create or update it
+    if (!this->dataPtr->ecm->EntityHasComponentType(this->dataPtr->servo2_entity, sim::components::ExternalWorldWrenchCmd().TypeId()))
+    {
+      // Create a new ExternalWorldWrenchCmd component with the force and torque
+      this->dataPtr->ecm->CreateComponent(this->dataPtr->servo2_entity, sim::components::ExternalWorldWrenchCmd(wrenchMsg2));
+    }
+    else
+    {
+      // Update the existing ExternalWorldWrenchCmd component
+      auto wrenchComp2 = this->dataPtr->ecm->Component<sim::components::ExternalWorldWrenchCmd>(this->dataPtr->servo2_entity);
+      if (wrenchComp2)
+      {
+        wrenchComp2->Data().mutable_force()->set_x(force2.X());
+        wrenchComp2->Data().mutable_force()->set_y(force2.Y());
+        wrenchComp2->Data().mutable_force()->set_z(force2.Z());
+        wrenchComp2->Data().mutable_torque()->set_x(torque2.X());
+        wrenchComp2->Data().mutable_torque()->set_y(torque2.Y());
+        wrenchComp2->Data().mutable_torque()->set_z(torque2.Z());
+      }
+    }
+
+    // end logan edits
 
     for (unsigned int i = 0; i < this->dataPtr->joints_.size(); ++i)
     {
